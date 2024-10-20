@@ -3,17 +3,17 @@
 # インターン参加の経緯
 自分は普段大学での研究以外では都内のベンチャー系企業で受託開発を行っており、そこでフロントからバックエンド、インフラまで幅広く開発を行っていました。その中でも、SREの領域に対し個人的に興味があり、より大きな組織の中で業務を経験してみたいという思いでMIXIのインターンに応募しました。
 当時逆求人等のイベントを知らず、シンプルにサイトから応募したためES→人事面接→現場面接という流れでした。
-自分の所属していたみてねの社員さんの方々は、プロダクト志向の強い方が多く、皆さんが「みてね」というプロダクトをより良いものにしたいという思いを持っている印象を受けました。また、MIXIは[企業理念](https://mixigroup-recruit.mixi.co.jp/about/philosophy/)にもあるように、コミュニケーションを非常に重要にしており、実際に働いている際もコミュニケーションを重視していることがよくわかりました。
 # 取り組んだタスクについて
 MIXIでは、インターンと言っても実際のSREチームのメンバーの一員として、他の社員の方と同じようなタスクに取り組みます。主に2つのタスクに取り組んだので簡単に紹介します。
 ## EC2インスタンスをARMベースのGravitonへと移行
-みてねでは、インフラにEKSを利用しており、データプレーンはEC2で動いています。([参考ブログ](https://team-blog.mitene.us/about-sre-team-7c2109450225))
+みてねでは、インフラにEKSを利用しており、データプレーンはEC2で動いています。技術スタックについては以下のサイトで公開されています。
+https://mixigroup-recruit.mixi.co.jp/recruitment-category/career/11842/
 当時、コスト削減のためx86搭載のインスタンスからARMベースの[Gravitonインスタンス](https://docs.aws.amazon.com/whitepapers/latest/aws-graviton-performance-testing/what-is-aws-graviton.html)に移行する作業を行っていました。具体的には、[taint/toleration](https://kubernetes.io/ja/docs/concepts/scheduling-eviction/taint-and-toleration/)を用いてPod数の多い処理からArmノードに載せるような形の処理を行っていました。
 その際、一部の画像補正ライブラリがARM版のバイナリが提供されないことから移行作業のブロッカーになっていたという問題がありました。そこで、画像補正ライブラリを呼び出す部分をマイクロサービスのような形で切り出して呼び出せるように修正する必要があったのでそのタスクを任されました。具体的には以下の図に示したようなフローを実装するものでした。
 流れとしてはメインサーバ内で行っていた画像補正処理を、S3を介して外部のAPIサーバで処理するよう変更する内容でした。APIサーバのKubernetesマニフェストファイルを編集して外部アクセスを可能にし、メインのシステムからはAPIリクエストを通じて画像補正処理を行えるようにしました。
 ![](https://storage.googleapis.com/zenn-user-upload/ae1ec03ece04-20241019.png)
 このタスクは取り掛かってから本番リリースまで1ヶ月ほど時間を要し、今は実際のサービス内で稼働しています🎉
-現在、該当のS3バケットには1日平均で10万枚以上の画像がアップロードされており、規模感の大きさを実感しました。
+2024年10月現在、該当のS3バケットには1日平均で20万枚程度の画像がアップロードされており、規模感の大きさを実感しました。
 ### 大変だった点
 個人的に大変だった点は実装したコードに対するテストコードの記述でした。普段あまりテストを書いてこなかったこともあり、テストを書く際に苦労する部分がありました。自身が追加した処理に対するテストだけではなく、他のクラスから新たに追加したメソッドを呼び出している部分が複数あり、それらの修正も必要であったため広範囲のコードを追いかける必要がありました。
 また、**「テストの責任範囲」** についてよく考えるようになりました。テストを書くにあたって外部へのAPI呼び出しについてはスタブやモックを使って記述することになるのですが、その際に例えば、「処理Aに関するテストは別のテストでカバーされているので書かなくても良い」といったことや、逆に「処理Bの関するテストは必ずカバーされている必要がある」といったことです。各テストにおいて適切な責務を意識しながら書くことの重要性を学びました。
@@ -21,31 +21,47 @@ MIXIでは、インターンと言っても実際のSREチームのメンバー�
 ## CircleCIからKubernetes Jobへの移行
 残りの2週間はみてねのSREチームがCIにかかるコストを削減するために、CIをCircleCIからKubernetes Jobへの移行を行っていたため、その際に生じたタスクをこなしました。こちらは一つ目のタスクとは異なり移行時のバグ修正や実行時間を抑えるための処理を加えたりと、比較的小さな成果を積み上げる形になりました。
 具体的なタスクは以下の通りです。
-- Kubernetes Jobに移行した際にCircleCIでは成功していたテストで失敗してしまうものがあったため、その修正をしました。原因は、Kubernetes JobがAPIエンドポイントとして[クラスタ内DNS](https://kubernetes.io/ja/docs/concepts/services-networking/dns-pod-service/)を叩こうとしていたのですが、Kubernetes Jobが動作するクラスタと APIサーバが動作していたクラスタが違っていたので、(当然ですが)エラーが出ていたというもので、Kubernetes Jobの中でローカルにコンテナを用意しそのコンテナを叩くようにすることで修正できました。
+### 落ちるようになったテストの修正
+Kubernetes Jobに移行した際にCircleCIでは成功していたテストで失敗してしまうものがあったため、その修正をしました。原因は、Kubernetes JobがAPIエンドポイントとして[クラスタ内DNS](https://kubernetes.io/ja/docs/concepts/services-networking/dns-pod-service/)を叩こうとしていたのですが、Kubernetes Jobが動作するクラスタと APIサーバが動作していたクラスタが違っていたので、(当然ですが)エラーが出ていたというもので、Kubernetes Jobの中でローカルにコンテナを用意しそのコンテナを叩くようにすることで修正できました。
 ![](https://storage.googleapis.com/zenn-user-upload/cfde99ab6d06-20241019.png)
-- テストの失敗ではなくKubernetesのJobがなんらかの理由で失敗した際の表示がうまくいっていなかったためKubernetes Jobの失敗を検知しその内容を表示するようにしました。
-- Github Actionsのワークフローをキャンセルした場合や新しいコミットが積まれた場合に古いコミットに対するテストのJobが止まらないという問題があったので、Jobを止めるように修正しました。その際、Github Actionsのワークフローがキャンセルされたことを検知する仕組みや、`concurrency`を利用することでワークフローを一度に1つだけ実行するような制御を行うことができました。
+### Jobの失敗とテストの失敗を区別して表示
+テストの失敗ではなくKubernetesのJobがなんらかの理由で失敗した際の表示がうまくいっていなかったためKubernetes Jobの失敗を検知しその内容を表示するようにしました。
+Github Actionsのワークフローをキャンセルした場合や新しいコミットが積まれた場合に古いコミットに対するテストのJobが止まらないという問題があったので、Jobを止めるように修正しました。その際、Github Actionsのワークフローがキャンセルされたことを検知する仕組みや、`concurrency`を利用することでワークフローを一度に1つだけ実行するような制御を行うことができました。
   
-  - [Jobのキャンセルをactionsで検知](https://docs.github.com/ja/actions/writing-workflows/choosing-what-your-workflow-does/evaluate-expressions-in-workflows-and-actions#cancelled)
-  - [concurrencyを用いた同時実行の制御](https://docs.github.com/ja/actions/writing-workflows/choosing-what-your-workflow-does/control-the-concurrency-of-workflows-and-jobs#using-concurrency-in-different-scenarios)
-- ECR Pull Through Cacheを用いたコンテナ起動の高速化施策検証
-  - CircleCIと比較してKubernetes Jobの実行時間が安定しておらず、かつより多くの実行時間を要していたため複数の高速化の施策を行っていました。そのうちの一つとして、テスト時にローカルで使用するmysqlやredisといったDockerコンテナの起動を[プルスルーキャッシュ](https://docs.aws.amazon.com/AmazonECR/latest/userguide/pull-through-cache.html)を用いて高速化しました。以下のように、キャッシュされたイメージをECRのプライベートリポジトリからプルできるという機能です。
+- [Jobのキャンセルをactionsで検知](https://docs.github.com/ja/actions/writing-workflows/choosing-what-your-workflow-does/evaluate-expressions-in-workflows-and-actions#cancelled)
+- [concurrencyを用いた同時実行の制御](https://docs.github.com/ja/actions/writing-workflows/choosing-what-your-workflow-does/control-the-concurrency-of-workflows-and-jobs#using-concurrency-in-different-scenarios)
+### ECR Pull Through Cacheを用いたコンテナ起動の高速化施策検証
+CircleCIと比較してKubernetes Jobの実行時間が安定しておらず、かつより多くの実行時間を要していたため複数の高速化の施策を行っていました。そのうちの一つとして、テスト時にローカルで使用するmysqlやredisといったDockerコンテナの起動を[プルスルーキャッシュ](https://docs.aws.amazon.com/AmazonECR/latest/userguide/pull-through-cache.html)を用いて高速化しました。以下のように、キャッシュされたイメージをECRのプライベートリポジトリからプルできるという機能です。
 ![](https://storage.googleapis.com/zenn-user-upload/11f5631dd3b5-20241020.png)
 クロスアカウントで「自動作成される」リポジトリを利用する関係でルールの作成とIAMポリシーの付与だけではなく、独自の[リポジトリ作成テンプレート](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-creation-templates.html)を作り適用する必要があったことがハマりポイントでした。
 なお、リポジトリ作成テンプレートは以下のような流れで適用されます。(前述のAWSドキュメントより)
 ![](https://storage.googleapis.com/zenn-user-upload/3d05116a2267-20241020.png)
 通常はデフォルトのテンプレートが適用されますが、Kubernetes Jobを作成していたAWSアカウントとプルスルーキャッシュを作成していたAWSアカウントが異なっていたため、独自のリポジトリポリシーを含んだテンプレートを作成し適用する必要がありました。ドキュメントには以下の記載があり、デフォルトのテンプレートでは何もリポジトリポリシー(IAMポリシーとはまた別)を反映しないと書かれていました。
-    > These default settings include turning off tag immutability, using AES-256 encryption, and **not applying any repository or lifecycle policies**
+> These default settings include turning off tag immutability, using AES-256 encryption, and **not applying any repository or lifecycle policies**
+
+プルスルーキャッシュを使用する準備ができたので、(キャッシュされたイメージを使うこ
+とでコンテナ起動が高速化することを期待して)実際に使用してみたところ、結果は残念ながら「速くもならず遅くもならない」というものでした。後の調査で、DockerHub等のパブリックイメージも
+CDN(cloudfrontやcloudflare)を用いてキャッシュされているという記事を発見し、プルス
+ルーキャッシュの利用は速度という観点ではあまり優位性が生まれないという結論になりました。
+
 ## その他業務について
 ### stg環境でのインシデント対応
 他のチームからの問い合わせから、stg環境でサーバーエラーが起きていたとの報告があり、その問題の調査と対応も行いました。
 Grafanaを確認した結果、サーバーが落ちてるとの問い合わせが来た時間帯とPodの数が一時的に0となってしまっていた時間帯が一致していました。また、PodがスケジューリングされていたNodeも落ちていたことがわかっていたので、スポット中断によりNodeが落ち、そのNodeにたまたま全てのPodが乗っておりPodも落ちてしまったと判断しました。stg環境では元々Podの数が少ないのでスポット中断によりPodが全て落ちてしまうことは考えられる事象でした。
 そこで、Kubernetesの機能である[Pod Topology Spread Constraints](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/)を用いて各NodeごとにPodがほぼ均等に分散するよう設定を行ったことで上記事象の発生確率を下げるような処理を追加しました。この処理の追加後実際にPodが各Nodeに分散されていることを確認し、現在も使われています。
 このようなKubernetesのスケジューリングは個人ではなかなか経験できないことでもあるので、取り扱うことができてよかったです。
-また、この問題以外にもGrafanaのメトリクスを確認し調査すべき問題が見つかった際に調査を行う機会もあり、そこではSREとして重要な考え方として以下の2点を学ことができました。
-- 客観的なデータに基づいて意思決定を⾏うこと
-- ⼀つのグラフが⽰すのは単なる事実に過ぎず、複数のグラフを組み合わせることで初めて因果関係と解決策を提⽰することができるということ
+### OOM Killedの調査
+webサーバのKubernetes Podにおいてメモリ不足によりOOM Killedが発生していたため、調査を行いました。基本的には[PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/)を叩いてOOM Killedにより終了したPodのログやメトリクスおよび、PodがスケジューリングされていたNodeのメトリクスを調査しました。その結果、USリージョンのNodeで動作していたPodがメモリ不足によりOOM Killedとなったことがわかりました。また、メモリのメトリクスを確認したところ、スパイクが起きた時間帯とDB再起動の時間帯が同じであったことがわかりました。過去にも同様の挙動を観測したこともありDB再起動によりコネクションプールを再構築し再接続しようとした際にPodに割り当てられたメモリの上限に達してしまったという結論になりました。Railsアプリケーションの特性としてメモリ使用量が減少しにくいということもありPodのメモリ上限に張り付いたままの状態がしばらく続いてしまいOOM Killedとなってしまったということです。ただ、ユーザ影響はなく原因も特定できていたため特別な対応は行わず終了となりました。
+
+これらのケースおよび他の調査を通じて、SREとして重要な考え方として以下の2点を学ことができました。
+- **客観的なデータ**に基づいて意思決定を⾏うこと
+- 1つのグラフが⽰すのは単なる事実に過ぎず、**複数のグラフを組み合わせることで初めて因果関係と解決策を提⽰することができる**ということ
   
 SREとして重要な考え方は他にもたくさんありますが、上記の考え方をみなさんが当たり前に実践しており、とても参考になりました。
 # 番外編
-業務外にも様々なイベントを通じて他の社員の方と交流できる機会が多くありました。フットサル大会やタコスの腕を競うタコスバトルというイベントがあったり、業務後に何度もご飯に連れて行っていただきました。
+業務外にも様々なイベントを通じて他の社員の方と交流できる機会が多くありました。フットサル大会やタコスの腕を競うタコスバトルというイベントがあったり、業務後に何度もご飯に連れて行っていただきました。また、栄養バランスの整った社食はとても美味しかったです。社食を含め、MIXIは働く環境が本当に良かった印象でした！
+https://mixigroup-recruit.mixi.co.jp/life/office/
+
+# インターンを通じた感想
+自分の所属していたみてねの社員さんの方々は、プロダクト志向の強い方が多く、皆さんが「みてね」というプロダクトをより良いものにしたいという思いを持っている印象を受けました。また、MIXIは企業理念にもあるように、コミュニケーションを非常に重要にしており、実際に働いている際もコミュニケーションを重視していることがよくわかりました。
+また、個人的な課題としては、タスクを「こなす」ことに注⼒し過ぎてしまい広い視野が持てなかった印象がありました。現在のみてねのインフラの課題を発⾒し、修正案を提示する=タスクを「作る」ことができればより良かったと思っています。ただ、そのためにはより広い知識や技術⼒が必要となるのは当然なので今後もレベルアップのために頑張ろうと思いました！
