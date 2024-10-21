@@ -6,10 +6,10 @@
 # 取り組んだタスクについて
 MIXIでは、インターンと言っても実際のSREチームのメンバーの一員として、他の社員の方と同じようなタスクに取り組みます。主に2つのタスクに取り組んだので簡単に紹介します。
 ## EC2インスタンスをARMベースのGravitonへと移行
-みてねでは、インフラにEKSを利用しており、データプレーンはEC2で動いています。技術スタックについては以下のサイトで公開されています。
+みてねでは、インフラにEKSを利用しており、データプレーンはEC2で動いています。詳細な技術スタックについては以下のサイトで公開されています。
 https://mixigroup-recruit.mixi.co.jp/recruitment-category/career/11842/
 当時、コスト削減のためx86搭載のインスタンスからARMベースの[Gravitonインスタンス](https://docs.aws.amazon.com/whitepapers/latest/aws-graviton-performance-testing/what-is-aws-graviton.html)に移行する作業を行っていました。具体的には、[taint/toleration](https://kubernetes.io/ja/docs/concepts/scheduling-eviction/taint-and-toleration/)を用いてPod数の多い処理からArmノードに載せるような形の処理を行っていました。
-その際、一部の画像補正ライブラリがARM版のバイナリが提供されないことから移行作業のブロッカーになっていたという問題がありました。そこで、画像補正ライブラリを呼び出す部分をマイクロサービスのような形で切り出して呼び出せるように修正する必要があったのでそのタスクを任されました。具体的には以下の図に示したようなフローを実装するものでした。
+その際、一部の画像補正ライブラリにARM版のバイナリが提供されないことから移行作業のブロッカーになっていたという問題がありました。画像補正ライブラリは写真のプリント時に適用される場合があるもので、適用すると画像が綺麗になるというものです。そこで、画像補正ライブラリを呼び出す部分をマイクロサービスのような形で切り出して呼び出せるように修正する必要があったのでそのタスクを任されました。具体的には以下の図に示したようなフローを実装するものでした。
 流れとしてはメインサーバ内で行っていた画像補正処理を、S3を介して外部のAPIサーバで処理するよう変更する内容でした。APIサーバのKubernetesマニフェストファイルを編集して外部アクセスを可能にし、メインのシステムからはAPIリクエストを通じて画像補正処理を行えるようにしました。
 ![](https://storage.googleapis.com/zenn-user-upload/ae1ec03ece04-20241019.png)
 このタスクは取り掛かってから本番リリースまで1ヶ月ほど時間を要し、今は実際のサービス内で稼働しています🎉
@@ -19,19 +19,21 @@ https://mixigroup-recruit.mixi.co.jp/recruitment-category/career/11842/
 また、**「テストの責任範囲」** についてよく考えるようになりました。テストを書くにあたって外部へのAPI呼び出しについてはスタブやモックを使って記述することになるのですが、その際に例えば、「処理Aに関するテストは別のテストでカバーされているので書かなくても良い」といったことや、逆に「処理Bの関するテストは必ずカバーされている必要がある」といったことです。各テストにおいて適切な責務を意識しながら書くことの重要性を学びました。
 さらに、みてねは画像を取り扱うサービスであるため画像に関連するテストも自ずと多くなりますが、その際見た目はほぼ同じだが僅かなカラー差で落ちるテストも存在したりと、みてねならではのテストの難しさも実感しました。
 ## CircleCIからKubernetes Jobへの移行
-残りの2週間はみてねのSREチームがCIにかかるコストを削減するために、CIをCircleCIからKubernetes Jobへの移行を行っていたため、その際に生じたタスクをこなしました。こちらは一つ目のタスクとは異なり移行時のバグ修正や実行時間を抑えるための処理を加えたりと、比較的小さな成果を積み上げる形になりました。
+残りの2週間はみてねのSREチームがCIにかかるコストを削減するために、CIをCircleCIからKubernetes Jobへの移行を行っていたため、その際に生じたタスクをこなしました。こちらは一つ目のタスクとは異なり移行時のバグ修正や実行時間を抑えるための施策を検証したりと、比較的小さな成果を積み上げる形になりました。
 具体的なタスクは以下の通りです。
 ### 落ちるようになったテストの修正
-Kubernetes Jobに移行した際にCircleCIでは成功していたテストで失敗してしまうものがあったため、その修正をしました。原因は、Kubernetes JobがAPIエンドポイントとして[クラスタ内DNS](https://kubernetes.io/ja/docs/concepts/services-networking/dns-pod-service/)を叩こうとしていたのですが、Kubernetes Jobが動作するクラスタと APIサーバが動作していたクラスタが違っていたので、(当然ですが)エラーが出ていたというもので、Kubernetes Jobの中でローカルにコンテナを用意しそのコンテナを叩くようにすることで修正できました。
+Kubernetes Jobに移行した際にCircleCIでは成功していたテストで失敗してしまうものがあったため、その修正をしました。原因は、Kubernetes JobがAPIエンドポイントとして[クラスタ内DNS](https://kubernetes.io/ja/docs/concepts/services-networking/dns-pod-service/)を叩く際にKubernetes Jobが動作するクラスタと APIサーバが動作していたクラスタが違っていたので、(当然ですが)エラーが出ていたというものでした。シンプルにKubernetes Jobの中でローカルにコンテナを用意しそのコンテナを叩くようにすることで修正できましたが、原因を見つける際にKubernetesの知識を実際の業務で活用できた点は良かったと思いました。
 ![](https://storage.googleapis.com/zenn-user-upload/cfde99ab6d06-20241019.png)
 ### Jobの失敗とテストの失敗を区別して表示
-テストの失敗ではなくKubernetesのJobがなんらかの理由で失敗した際の表示がうまくいっていなかったためKubernetes Jobの失敗を検知しその内容を表示するようにしました。
+テストの失敗ではなくKubernetesのJobがなんらかの理由で失敗した際の表示がうまくいっていなかった問題があったため、Kubernetes Jobの失敗を検知しその内容をマークダウンに表示するようにしました。その際、`$GITHUB_ENV`という環境ファイルに環境変数を定義することでワークフロージョブで取得したKubernetes Jobの状態をマークダウンファイルに渡すといった処理を行いました。
+https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/workflow-commands-for-github-actions#setting-an-environment-variable
+### ジョブのキャンセルを良い感じに扱う
 Github Actionsのワークフローをキャンセルした場合や新しいコミットが積まれた場合に古いコミットに対するテストのJobが止まらないという問題があったので、Jobを止めるように修正しました。その際、Github Actionsのワークフローがキャンセルされたことを検知する仕組みや、`concurrency`を利用することでワークフローを一度に1つだけ実行するような制御を行うことができました。
   
 - [Jobのキャンセルをactionsで検知](https://docs.github.com/ja/actions/writing-workflows/choosing-what-your-workflow-does/evaluate-expressions-in-workflows-and-actions#cancelled)
 - [concurrencyを用いた同時実行の制御](https://docs.github.com/ja/actions/writing-workflows/choosing-what-your-workflow-does/control-the-concurrency-of-workflows-and-jobs#using-concurrency-in-different-scenarios)
 ### ECR Pull Through Cacheを用いたコンテナ起動の高速化施策検証
-CircleCIと比較してKubernetes Jobの実行時間が安定しておらず、かつより多くの実行時間を要していたため複数の高速化の施策を行っていました。そのうちの一つとして、テスト時にローカルで使用するmysqlやredisといったDockerコンテナの起動を[プルスルーキャッシュ](https://docs.aws.amazon.com/AmazonECR/latest/userguide/pull-through-cache.html)を用いて高速化しました。以下のように、キャッシュされたイメージをECRのプライベートリポジトリからプルできるという機能です。
+CircleCIと比較してKubernetes Jobの実行時間が安定しておらず、かつより多くの実行時間を要していたため複数の高速化施策の検証を行っていました。そのうちの一つとして、テスト時にローカルで使用するmysqlやredisといったDockerコンテナの起動を[プルスルーキャッシュ](https://docs.aws.amazon.com/AmazonECR/latest/userguide/pull-through-cache.html)を用いて高速化できるかどうかを検証しました。プルスルーキャッシュは以下のように、キャッシュされたイメージをECRのプライベートリポジトリからプルできるという機能で、コンテナ起動の高速化が期待できます。
 ![](https://storage.googleapis.com/zenn-user-upload/11f5631dd3b5-20241020.png)
 クロスアカウントで「自動作成される」リポジトリを利用する関係でルールの作成とIAMポリシーの付与だけではなく、独自の[リポジトリ作成テンプレート](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-creation-templates.html)を作り適用する必要があったことがハマりポイントでした。
 なお、リポジトリ作成テンプレートは以下のような流れで適用されます。(前述のAWSドキュメントより)
@@ -40,9 +42,8 @@ CircleCIと比較してKubernetes Jobの実行時間が安定しておらず、�
 > These default settings include turning off tag immutability, using AES-256 encryption, and **not applying any repository or lifecycle policies**
 
 プルスルーキャッシュを使用する準備ができたので、(キャッシュされたイメージを使うこ
-とでコンテナ起動が高速化することを期待して)実際に使用してみたところ、結果は残念ながら「速くもならず遅くもならない」というものでした。後の調査で、DockerHub等のパブリックイメージも
-CDN(cloudfrontやcloudflare)を用いてキャッシュされているという記事を発見し、プルス
-ルーキャッシュの利用は速度という観点ではあまり優位性が生まれないという結論になりました。
+とでコンテナ起動が高速化することを期待して)実際に使用してみたところ、結果は残念ながら「速くもならず遅くもならない」というものでした。(残念..)
+後の調査で、DockerHub等のパブリックイメージもCDN(cloudfrontやcloudflare)を用いてキャッシュされているという記事を発見し、プルスルーキャッシュの利用は速度という観点ではあまり優位性が生まれないという結論になりました。
 
 ## その他業務について
 ### stg環境でのインシデント対応
@@ -51,7 +52,7 @@ Grafanaを確認した結果、サーバーが落ちてるとの問い合わせ�
 そこで、Kubernetesの機能である[Pod Topology Spread Constraints](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/)を用いて各NodeごとにPodがほぼ均等に分散するよう設定を行ったことで上記事象の発生確率を下げるような処理を追加しました。この処理の追加後実際にPodが各Nodeに分散されていることを確認し、現在も使われています。
 このようなKubernetesのスケジューリングは個人ではなかなか経験できないことでもあるので、取り扱うことができてよかったです。
 ### OOM Killedの調査
-webサーバのKubernetes Podにおいてメモリ不足によりOOM Killedが発生していたため、調査を行いました。基本的には[PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/)を叩いてOOM Killedにより終了したPodのログやメトリクスおよび、PodがスケジューリングされていたNodeのメトリクスを調査しました。その結果、USリージョンのNodeで動作していたPodがメモリ不足によりOOM Killedとなったことがわかりました。また、メモリのメトリクスを確認したところ、スパイクが起きた時間帯とDB再起動の時間帯が同じであったことがわかりました。過去にも同様の挙動を観測したこともありDB再起動によりコネクションプールを再構築し再接続しようとした際にPodに割り当てられたメモリの上限に達してしまったという結論になりました。Railsアプリケーションの特性としてメモリ使用量が減少しにくいということもありPodのメモリ上限に張り付いたままの状態がしばらく続いてしまいOOM Killedとなってしまったということです。ただ、ユーザ影響はなく原因も特定できていたため特別な対応は行わず終了となりました。
+webサーバのKubernetes Podにおいてメモリ不足によりOOM Killedが発生していたため、調査を行いました。基本的には[PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/)を叩いてOOM Killedにより終了したPodのログやメトリクスおよび、PodがスケジューリングされていたNodeのメトリクスを調査しました。その結果、USリージョンのNodeで動作していたPodがメモリ不足によりOOM Killedとなったことがわかりました。また、メモリのメトリクスを確認したところ、スパイクが起きた時間帯とDB再起動の時間帯が同じであったことがわかりました。過去にも同様の挙動を観測したこともありDB再起動によりコネクションプールを再構築しコネクションを再接続しようとした際にPodに割り当てられたメモリの上限に達してしまったという結論になりました。Railsアプリケーションの特性としてメモリ使用量が減少しにくいということもありPodのメモリ上限に張り付いたままの状態がしばらく続いてしまいOOM Killedとなってしまったということです。ただ、ユーザ影響はなく原因も特定できていたため特別な対応は行わず終了となりました。
 
 これらのケースおよび他の調査を通じて、SREとして重要な考え方として以下の2点を学ことができました。
 - **客観的なデータ**に基づいて意思決定を⾏うこと
