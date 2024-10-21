@@ -8,8 +8,8 @@ MIXIでは、インターンと言っても実際のSREチームのメンバー�
 ## EC2インスタンスをARMベースのGravitonへと移行
 みてねでは、インフラにEKSを利用しており、データプレーンはEC2で動いています。詳細な技術スタックについては以下のサイトで公開されています。
 https://mixigroup-recruit.mixi.co.jp/recruitment-category/career/11842/
-当時、コスト削減のためx86搭載のインスタンスからARMベースの[Gravitonインスタンス](https://docs.aws.amazon.com/whitepapers/latest/aws-graviton-performance-testing/what-is-aws-graviton.html)に移行する作業を行っていました。具体的には、[taint/toleration](https://kubernetes.io/ja/docs/concepts/scheduling-eviction/taint-and-toleration/)を用いてPod数の多い処理からArmノードに載せるような形の処理を行っていました。
-その際、一部の画像補正ライブラリにARM版のバイナリが提供されないことから移行作業のブロッカーになっていたという問題がありました。画像補正ライブラリは写真のプリント時に適用される場合があるもので、適用すると画像が綺麗になるというものです。そこで、画像補正ライブラリを呼び出す部分をマイクロサービスのような形で切り出して呼び出せるように修正する必要があったのでそのタスクを任されました。具体的には以下の図に示したようなフローを実装するものでした。
+当時、コスト削減のためx86搭載のインスタンスからARMベースの[Gravitonインスタンス](https://docs.aws.amazon.com/whitepapers/latest/aws-graviton-performance-testing/what-is-aws-graviton.html)に移行する作業を行っていました。具体的には、[taint/toleration](https://kubernetes.io/ja/docs/concepts/scheduling-eviction/taint-and-toleration/)を用いてPod数の多い処理からArmノードに乗せるような形の処理を行っていました。
+その際、一部の画像補正ライブラリにARM版のバイナリが提供されないことから移行作業のブロッカーになっていたという問題がありました。画像補正ライブラリは写真のプリント時に適用される場合があるもので、適用すると画像が綺麗になるというものです。そこで、画像補正ライブラリを呼び出す部分をマイクロサービスのような形で切り出して呼び出せるように修正する必要があり、その部分の実装を行いました。
 流れとしてはメインサーバ内で行っていた画像補正処理を、S3を介して外部のAPIサーバで処理するよう変更する内容でした。APIサーバのKubernetesマニフェストファイルを編集して外部アクセスを可能にし、メインのシステムからはAPIリクエストを通じて画像補正処理を行えるようにしました。
 ![](https://storage.googleapis.com/zenn-user-upload/ae1ec03ece04-20241019.png)
 このタスクは取り掛かってから本番リリースまで1ヶ月ほど時間を要し、今は実際のサービス内で稼働しています🎉
@@ -28,7 +28,8 @@ Kubernetes Jobに移行した際にCircleCIでは成功していたテストで�
 テストの失敗ではなくKubernetesのJobがなんらかの理由で失敗した際の表示がうまくいっていなかった問題があったため、Kubernetes Jobの失敗を検知しその内容をマークダウンに表示するようにしました。その際、`$GITHUB_ENV`という環境ファイルに環境変数を定義することでワークフロージョブで取得したKubernetes Jobの状態をマークダウンファイルに渡すといった処理を行いました。
 https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/workflow-commands-for-github-actions#setting-an-environment-variable
 ### ジョブのキャンセルを良い感じに扱う
-Github Actionsのワークフローをキャンセルした場合や新しいコミットが積まれた場合に古いコミットに対するテストのJobが止まらないという問題があったので、Jobを止めるように修正しました。その際、Github Actionsのワークフローがキャンセルされたことを検知する仕組みや、`concurrency`を利用することでワークフローを一度に1つだけ実行するような制御を行うことができました。
+Github Actionsのワークフローをキャンセルした場合や新しいコミットが積まれた場合に古いコミットに対するテストのJobが止まらないという問題があったので、Jobを止めるように修正しました。
+Github Actionsのワークフローがキャンセルされたことを検知する仕組みや、`concurrency`を利用することでワークフローを一度に1つだけ実行するような制御を行うことができました。
   
 - [Jobのキャンセルをactionsで検知](https://docs.github.com/ja/actions/writing-workflows/choosing-what-your-workflow-does/evaluate-expressions-in-workflows-and-actions#cancelled)
 - [concurrencyを用いた同時実行の制御](https://docs.github.com/ja/actions/writing-workflows/choosing-what-your-workflow-does/control-the-concurrency-of-workflows-and-jobs#using-concurrency-in-different-scenarios)
@@ -43,8 +44,9 @@ CircleCIと比較してKubernetes Jobの実行時間が安定しておらず、�
 
 プルスルーキャッシュを使用する準備ができたので、(キャッシュされたイメージを使うこ
 とでコンテナ起動が高速化することを期待して)実際に使用してみたところ、結果は残念ながら「速くもならず遅くもならない」というものでした。(残念..)
-仮説としてはDocker HubのイメージもどこかのCDNにキャッシュされているため速度的な優位性が生まれなかったという結論になりました。
-なお、このことを確かめるためにインターン終了後、簡単な調査を行いました。
+仮説としてはDocker HubのイメージもどこかのCDNにキャッシュされているため速度的な優位性が生まれなかったのではないかというものがありました。
+
+このことを検証するため、インターン終了後に「Docker Hubのイメージはどこにキャッシュされているのか」について簡単な調査を行いました。
 検証方法はシンプルで、wiresharkを起動しながら適当なDockerイメージをpullするというものです。その結果、cloudflareからリスポンスが提供されていることが確認でき、Docker Hubのイメージはそもそもcloudflareにキャッシュされているため、プルスルーキャッシュを用いることでイメージのpullが高速化されるわけではなさそうという検証結果が納得できるものになりました。
 ![](https://storage.googleapis.com/zenn-user-upload/c1a7d425b49c-20241021.png)
 そのため、プルスルーキャッシュはパブリックなリポジトリではなくプライベートなリポジトリからイメージをpullできるというセキュリティ的な観点の方が大きそうです。
